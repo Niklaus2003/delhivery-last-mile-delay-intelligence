@@ -33,7 +33,7 @@ SHP90031,HUB04,Standard,0.0,0,No action
 SHP90032,HUB08,Standard,0.0,0,No action
 SHP90033,HUB10,Watch,0.0,0,No action
 SHP90034,HUB15,Escalate,0.37,0,No action
-SHP90035,HUB08,Standard,0.21,0,No action
+SHP90035,HUB08,Standard,0.22,0,No action
 SHP90036,HUB05,Standard,0.03,0,No action
 SHP90037,HUB07,Watch,0.38,0,No action
 SHP90038,HUB14,Watch,0.27,0,No action
@@ -41,7 +41,7 @@ SHP90039,HUB06,Standard,0.0,0,No action
 SHP90040,HUB11,Watch,0.0,0,No action
 SHP90041,HUB21,Escalate,0.85,1,Escalate to hub manager
 SHP90042,HUB10,Watch,0.06,0,No action
-SHP90043,HUB05,Standard,0.08,0,No action
+SHP90043,HUB05,Standard,0.09,0,No action
 SHP90044,HUB14,Watch,0.15,0,No action
 SHP90045,HUB03,Standard,0.01,0,No action
 SHP90046,HUB21,Escalate,0.53,1,Escalate to hub manager

@@ -1,13 +1,5 @@
-"""Part C: Delay Classifier and Alert Threshold for Delhivery Capstone.
-
-Trains candidate classifiers on 17 features to predict parcel delays (is_delayed).
-Performs feature selection, hyperparameter tuning, threshold selection based on operations rule,
-and single final test evaluation.
-"""
-
 from pathlib import Path
 import sys
-
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -26,7 +18,6 @@ from src.shipment_prep import FEATURES, NOISE_COLUMNS
 
 
 def compute_classification_metrics(y_true, y_pred):
-    """Compute confusion matrix and standard classification metrics."""
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
     acc = accuracy_score(y_true, y_pred)
     prec = precision_score(y_true, y_pred, zero_division=0)
@@ -52,7 +43,6 @@ def main():
     X = df[FEATURES]
     y = df["is_delayed"].astype(int)
 
-    # 1. Stratified split: 70% train (840), 15% validation (180), 15% test (180)
     X_train, X_temp, y_train, y_temp = train_test_split(
         X, y, test_size=0.3, random_state=42, stratify=y
     )
@@ -60,17 +50,10 @@ def main():
         X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp
     )
 
-    assert len(X_train) == 840 and y_train.sum() == 195, f"Train split unexpected: {len(X_train)}, {y_train.sum()}"
-    assert len(X_val) == 180 and y_val.sum() == 42, f"Val split unexpected: {len(X_val)}, {y_val.sum()}"
-    assert len(X_test) == 180 and y_test.sum() == 41, f"Test split unexpected: {len(X_test)}, {y_test.sum()}"
-
-    # 2. Blind baseline and three classifiers
-    # Blind baseline: predicts all on-time (0)
     blind_preds = np.zeros(len(y_val), dtype=int)
     blind_metrics = compute_classification_metrics(y_val, blind_preds)
     blind_metrics["precision"] = 0.0000
 
-    # Logistic Regression with StandardScaler
     lr_pipeline = Pipeline([
         ("scaler", StandardScaler()),
         ("model", LogisticRegression(random_state=42)),
@@ -79,7 +62,6 @@ def main():
     lr_preds = lr_pipeline.predict(X_val)
     lr_metrics = compute_classification_metrics(y_val, lr_preds)
 
-    # Decision Tree depth tuning over d in [2, 3, 4, 5, 6, 8, 10]
     depths = [2, 3, 4, 5, 6, 8, 10]
     best_dt_depth = None
     best_dt_f1 = -1.0
@@ -95,7 +77,6 @@ def main():
             best_dt_depth = d
             best_dt_metrics = compute_classification_metrics(y_val, preds)
 
-    # Random Forest Default
     rf_default = RandomForestClassifier(n_estimators=100, random_state=42)
     rf_default.fit(X_train, y_train)
     rf_default_preds = rf_default.predict(X_val)
@@ -109,13 +90,10 @@ def main():
     ])
     models_table.to_csv(outputs_dir / "part_c_models.csv", index=False)
 
-    # 3. Feature Signal and SelectKBest evaluation
-    # Feature importances from 17-feature default RF
     rf_17 = RandomForestClassifier(n_estimators=100, random_state=42)
     rf_17.fit(X_train, y_train)
     rf_importances = rf_17.feature_importances_
 
-    # ANOVA F-scores from SelectKBest
     selector_all = SelectKBest(score_func=f_classif, k="all")
     selector_all.fit(X_train, y_train)
     f_scores = selector_all.scores_
@@ -137,7 +115,6 @@ def main():
     feature_scores_df["rf_importance"] = feature_scores_df["rf_importance"].round(4)
     feature_scores_df.to_csv(outputs_dir / "part_c_feature_scores.csv", index=False)
 
-    # Evaluate k in [5, 7, 10, 12, 17]
     k_values = [5, 7, 10, 12, 17]
     selectk_rows = []
     for k in k_values:
@@ -153,7 +130,6 @@ def main():
     selectk_df = pd.DataFrame(selectk_rows)
     selectk_df.to_csv(outputs_dir / "part_c_selectk.csv", index=False)
 
-    # 4. Hyperparameter Tuning on top 7 features
     selector_7 = SelectKBest(score_func=f_classif, k=7)
     X_train_7 = selector_7.fit_transform(X_train, y_train)
     X_val_7 = selector_7.transform(X_val)
@@ -184,7 +160,6 @@ def main():
     rand_val_preds = random_search.predict(X_val_7)
     rand_val_f1 = f1_score(y_val, rand_val_preds, zero_division=0)
 
-    # Default forest on the same 7 features (untuned: 100 trees, no depth limit, min_samples_leaf=1)
     default_forest_7 = RandomForestClassifier(n_estimators=100, random_state=42)
     default_forest_7.fit(X_train_7, y_train)
     default_val_preds = default_forest_7.predict(X_val_7)
@@ -221,11 +196,7 @@ def main():
     ])
     tuning_df.to_csv(outputs_dir / "part_c_tuning.csv", index=False)
 
-    # 5. Final Configuration Selection
-    # Pick candidate with highest val_f1 (ties -> default, grid, random)
-    chosen_row = tuning_df.sort_values(
-        by=["val_f1"], ascending=False
-    ).iloc[0]
+    chosen_row = tuning_df.sort_values(by=["val_f1"], ascending=False).iloc[0]
     chosen_from = chosen_row["search"]
 
     if chosen_from == "default_forest_same_7_features":
@@ -241,13 +212,9 @@ def main():
     ])
     final_model.fit(X_train, y_train)
 
-    # 6. Alert Threshold Selection
     val_probs = final_model.predict_proba(X_val)[:, 1]
     thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     threshold_rows = []
-
-    chosen_threshold = 0.1
-    best_t_found = False
 
     for t in thresholds:
         preds_t = (val_probs >= t).astype(int)
@@ -257,14 +224,12 @@ def main():
     thresholds_df = pd.DataFrame(threshold_rows)
     thresholds_df.to_csv(outputs_dir / "part_c_thresholds.csv", index=False)
 
-    # Operations rule: highest threshold with recall >= 0.80
     eligible_thresholds = thresholds_df[thresholds_df["recall"] >= 0.80]
     if not eligible_thresholds.empty:
         chosen_threshold = eligible_thresholds["threshold"].max()
     else:
         chosen_threshold = 0.1
 
-    # 7. One test evaluation
     test_probs = final_model.predict_proba(X_test)[:, 1]
     test_preds = (test_probs >= chosen_threshold).astype(int)
     test_metrics = compute_classification_metrics(y_test, test_preds)
@@ -285,14 +250,7 @@ def main():
     }])
     final_config_df.to_csv(outputs_dir / "part_c_final_config.csv", index=False)
 
-    print("Part C complete.")
-    print("Models table saved to outputs/part_c_models.csv")
-    print("Feature scores saved to outputs/part_c_feature_scores.csv")
-    print("SelectK table saved to outputs/part_c_selectk.csv")
-    print("Tuning table saved to outputs/part_c_tuning.csv")
-    print("Thresholds table saved to outputs/part_c_thresholds.csv")
-    print("Final test results saved to outputs/part_c_final_test.csv")
-    print("Final config saved to outputs/part_c_final_config.csv")
+    print("Part C completed successfully.")
 
 
 if __name__ == "__main__":

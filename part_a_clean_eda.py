@@ -22,44 +22,41 @@ def main():
     modelling_table = build_features(clean_df, hubs)
 
     modelling_table["is_delayed"] = (
-        modelling_table["delivery_hours"]
-        > modelling_table["promised_hours"]
+        modelling_table["delivery_hours"] > modelling_table["promised_hours"]
     ).astype(int)
 
-    deduplicated = raw.drop_duplicates().copy()
+    dedup = raw.drop_duplicates().copy()
 
-    service_type_spellings_before = deduplicated["service_type"].nunique()
-    service_type_spellings_after = clean_df["service_type"].nunique()
+    service_before = dedup["service_type"].nunique()
+    service_after = clean_df["service_type"].nunique()
 
-    missing_distance_before = deduplicated["distance_km"].isna().sum()
-    missing_weight_before = deduplicated["parcel_weight_kg"].isna().sum()
-    sentinel_weight_rows = (
-        deduplicated["parcel_weight_kg"] > 100
-    ).sum()
-    missing_declared_value_before = deduplicated["declared_value"].isna().sum()
-    missing_payment_mode_before = deduplicated["payment_mode"].isna().sum()
+    missing_dist = dedup["distance_km"].isna().sum()
+    missing_weight = dedup["parcel_weight_kg"].isna().sum()
+    sentinel_weight = (dedup["parcel_weight_kg"] > 100).sum()
+    missing_val = dedup["declared_value"].isna().sum()
+    missing_pay = dedup["payment_mode"].isna().sum()
 
-    hours_q1 = modelling_table["delivery_hours"].quantile(0.25)
-    hours_q3 = modelling_table["delivery_hours"].quantile(0.75)
-    iqr = hours_q3 - hours_q1
-    hours_lower_bound = hours_q1 - 1.5 * iqr
-    hours_upper_bound = hours_q3 + 1.5 * iqr
-    hours_outlier_count = (
-        (modelling_table["delivery_hours"] < hours_lower_bound)
-        | (modelling_table["delivery_hours"] > hours_upper_bound)
+    q1 = modelling_table["delivery_hours"].quantile(0.25)
+    q3 = modelling_table["delivery_hours"].quantile(0.75)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+    outlier_count = (
+        (modelling_table["delivery_hours"] < lower_bound)
+        | (modelling_table["delivery_hours"] > upper_bound)
     ).sum()
 
     checks = {
         "raw_rows": len(raw),
-        "duplicate_rows_removed": len(raw) - len(deduplicated),
-        "rows_after_dedup": len(deduplicated),
-        "missing_distance_km_before": missing_distance_before,
-        "missing_parcel_weight_before": missing_weight_before,
-        "sentinel_weight_rows": sentinel_weight_rows,
-        "missing_declared_value_before": missing_declared_value_before,
-        "missing_payment_mode_before": missing_payment_mode_before,
-        "service_type_spellings_before": service_type_spellings_before,
-        "service_type_spellings_after": service_type_spellings_after,
+        "duplicate_rows_removed": len(raw) - len(dedup),
+        "rows_after_dedup": len(dedup),
+        "missing_distance_km_before": missing_dist,
+        "missing_parcel_weight_before": missing_weight,
+        "sentinel_weight_rows": sentinel_weight,
+        "missing_declared_value_before": missing_val,
+        "missing_payment_mode_before": missing_pay,
+        "service_type_spellings_before": service_before,
+        "service_type_spellings_after": service_after,
         "median_distance_km": medians["distance_km"],
         "median_parcel_weight_kg": medians["parcel_weight_kg"],
         "median_declared_value_inr": medians["declared_value_inr"],
@@ -69,11 +66,11 @@ def main():
         ].isna().sum().sum(),
         "delayed_count": modelling_table["is_delayed"].sum(),
         "delay_rate": modelling_table["is_delayed"].mean(),
-        "hours_q1": hours_q1,
-        "hours_q3": hours_q3,
-        "hours_lower_bound": hours_lower_bound,
-        "hours_upper_bound": hours_upper_bound,
-        "hours_outlier_count": hours_outlier_count,
+        "hours_q1": q1,
+        "hours_q3": q3,
+        "hours_lower_bound": lower_bound,
+        "hours_upper_bound": upper_bound,
+        "hours_outlier_count": outlier_count,
         "declared_value_mean_inr": modelling_table["declared_value_inr"].mean(),
         "declared_value_median_inr": modelling_table["declared_value_inr"].median(),
         "log_declared_value_mean": modelling_table["log_declared_value"].mean(),
@@ -82,13 +79,12 @@ def main():
 
     checks_df = pd.DataFrame([
         {
-            "metric": metric,
-            "value": round(value, 4)
-            if isinstance(value, (float, np.floating))
-            else value,
+            "metric": k,
+            "value": round(v, 4) if isinstance(v, (float, np.floating)) else v,
         }
-        for metric, value in checks.items()
+        for k, v in checks.items()
     ])
+    (BASE_DIR / "outputs").mkdir(parents=True, exist_ok=True)
     checks_df.to_csv(BASE_DIR / "outputs" / "part_a_checks.csv", index=False)
 
     modelling_table["distance_band"] = pd.cut(
@@ -100,17 +96,15 @@ def main():
     )
 
     group_results = []
-    for dimension in ["service_type", "hub_tier", "distance_band"]:
-        grouped = modelling_table.groupby(
-            dimension, observed=False
-        ).agg(
+    for dim in ["service_type", "hub_tier", "distance_band"]:
+        grouped = modelling_table.groupby(dim, observed=False).agg(
             shipments=("is_delayed", "size"),
             delayed=("is_delayed", "sum"),
             delay_rate=("is_delayed", "mean"),
             mean_hours=("delivery_hours", "mean"),
         ).reset_index()
-        grouped = grouped.rename(columns={dimension: "group"})
-        grouped["dimension"] = dimension
+        grouped = grouped.rename(columns={dim: "group"})
+        grouped["dimension"] = dim
         group_results.append(grouped)
 
     delay_by_group = pd.concat(group_results, ignore_index=True)
@@ -133,40 +127,13 @@ def main():
         index_label="column",
     )
 
-    modelling_table_to_save = modelling_table.copy()
-    numeric_columns = modelling_table_to_save.select_dtypes(
-        include=np.number
-    ).columns
-    modelling_table_to_save[numeric_columns] = (
-        modelling_table_to_save[numeric_columns].round(4)
-    )
-    modelling_table_to_save.to_csv(
-        BASE_DIR / "data" / "modelling_table.csv",
-        index=False,
-    )
+    save_table = modelling_table.copy()
+    num_cols = save_table.select_dtypes(include=np.number).columns
+    save_table[num_cols] = save_table[num_cols].round(4)
+    (BASE_DIR / "data").mkdir(parents=True, exist_ok=True)
+    save_table.to_csv(BASE_DIR / "data" / "modelling_table.csv", index=False)
 
-    delivery_correlations = correlation_matrix["delivery_hours"].drop(
-        "delivery_hours"
-    )
-    strongest_correlations = delivery_correlations.loc[
-        delivery_correlations.abs().sort_values(ascending=False).index
-    ].head(3)
-
-    # Summary of findings printed to stdout
-    service_results = delay_by_group[delay_by_group["dimension"] == "service_type"]
-    tier_results = delay_by_group[delay_by_group["dimension"] == "hub_tier"]
-    distance_results = delay_by_group[delay_by_group["dimension"] == "distance_band"]
-
-    print("Part A complete.")
-    print("Raw rows:", len(raw))
-    print("Cleaned rows:", len(clean_df))
-    print("Modelling rows:", len(modelling_table))
-    print("Delayed shipments:", int(modelling_table["is_delayed"].sum()))
-    print("Delay rate:", round(modelling_table["is_delayed"].mean(), 4))
-    print("Medians:", medians)
-    print("Strongest correlations with delivery_hours:")
-    print(strongest_correlations.round(4).to_string())
-    print("Saved Part A outputs.")
+    print("Part A completed successfully.")
 
 
 if __name__ == "__main__":
